@@ -33,6 +33,7 @@ import NotificationsScreen from '../screens/home/NotificationsScreen';
 import DepositScreen from '../screens/wallet/DepositScreen';
 import TransferScreen from '../screens/wallet/TransferScreen';
 import WithdrawScreen from '../screens/wallet/WithdrawScreen';
+import AddressesScreen from '../screens/wallet/AddressesScreen';
 import LevelsScreen from '../screens/team/LevelsScreen';
 import ReferralScreen from '../screens/team/ReferralScreen';
 import SupportScreen from '../screens/account/SupportScreen';
@@ -120,6 +121,7 @@ export default function RootNavigator() {
             <Stack.Screen name={ROUTES.DEPOSIT} component={DepositScreen} />
             <Stack.Screen name={ROUTES.TRANSFER} component={TransferScreen} />
             <Stack.Screen name={ROUTES.WITHDRAW} component={WithdrawScreen} />
+            <Stack.Screen name={ROUTES.ADDRESSES} component={AddressesScreen} />
             <Stack.Screen name={ROUTES.LEVELS} component={LevelsScreen} />
             <Stack.Screen name={ROUTES.REFERRAL} component={ReferralScreen} />
             <Stack.Screen name={ROUTES.SUPPORT} component={SupportScreen} />

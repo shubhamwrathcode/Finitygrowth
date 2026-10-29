@@ -19,6 +19,11 @@ const paths = {
   trend: () => <Path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
   plus: () => <Path d="M12 5v14M5 12h14" />,
   up: () => <Path d="M12 19V5m-6 6l6-6 6 6" />,
+  // Web Account.jsx notification icons
+  down: () => <Path d="M12 5v14m-6-6l6 6 6-6" />,
+  star: () => (
+    <Path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3z" />
+  ),
   team: () => (
     <Path d="M16 19v-1a4 4 0 00-4-4H7a4 4 0 00-4 4v1m18 0v-1a4 4 0 00-3-3.9M14 4.1a4 4 0 010 7.8M9.5 10a3 3 0 100-6 3 3 0 000 6z" />
   ),
@@ -61,6 +66,12 @@ const paths = {
     </>
   ),
   layers: () => <Path d="M12 3 2 8l10 5 10-5zM2 13l10 5 10-5" />,
+  // Web Earnings.jsx level commission bars
+  bars: () => <Path d="M4 20h4v-6H4v6zm6 0h4V10h-4v10zm6 0h4V4h-4v16z" />,
+  // Web Earnings.jsx direct commission (user + check)
+  userCheck: () => (
+    <Path d="M16 19v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1m14-9l2 2 4-4M10 10a3 3 0 100-6 3 3 0 000 6z" />
+  ),
   gift: () => (
     <>
       <Rect x="3" y="8" width="18" height="13" rx="2" />

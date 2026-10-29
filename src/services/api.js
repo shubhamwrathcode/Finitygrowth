@@ -14,7 +14,6 @@ import * as program from '../data/program';
 import { user } from '../data/user';
 import { ledger, balanceHistory, lockedAmount, packages } from '../data/ledger';
 import { teamMembers } from '../data/team';
-import { notifications as seedNotifications, supportTickets as seedTickets } from '../data/inbox';
 import { TODAY, addDays, diffDays, toKey, shortDate } from '../utils/date';
 import { round2 } from '../utils/format';
 import {
@@ -55,10 +54,6 @@ function entriesOfType(types, fromKey) {
 function currentBalance() {
   return balanceHistory[balanceHistory.length - 1].balance;
 }
-
-// In-memory copies so "mark all read" / "new ticket" work during a session.
-let notificationsStore = seedNotifications.map(n => ({ ...n }));
-let ticketsStore = seedTickets.map(t => ({ ...t }));
 
 // ---------------------------------------------------------------------------
 // Auth – same endpoints as stravex_mlm_web AuthPage
@@ -305,84 +300,101 @@ export function getCashFlow(weeks = 8) {
   return out;
 }
 
-export async function getDepositInfo() {
-  await delay();
-  return {
-    address: user.depositAddress,
-    network: program.walletRules.network,
-    chain: program.walletRules.chain,
-    balance: currentBalance(),
-    deposits: ledger.filter(e => e.type === 'deposit'),
-  };
+// ---------------------------------------------------------------------------
+// Deposit – same as web Wallet.jsx Deposit (visible BEP20 path)
+// GET  /api/v1/me/wallets
+// GET  /api/v1/me/wallet/deposit-address
+// GET  /api/v1/me/bep20-deposits?page&limit&transactionType
+// POST /api/v1/me/wallet/verify-deposit
+// ---------------------------------------------------------------------------
+export async function getDepositAddress() {
+  const res = await request('/api/v1/me/wallet/deposit-address');
+  return res.data;
 }
 
+export async function getBep20Deposits({ page = 1, limit = 10, transactionType = 'DEPOSIT' } = {}) {
+  const q = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (transactionType) q.set('transactionType', transactionType);
+  return request(`/api/v1/me/bep20-deposits?${q}`);
+}
+
+/** POST verify – returns { message, data } like web */
 export async function verifyDeposit() {
-  await delay(900);
-  return { found: false, message: 'No new BEP20 transfer found yet. We check again every 15 minutes.' };
+  return request('/api/v1/me/wallet/verify-deposit', { method: 'POST', body: {} });
 }
 
-export async function getTransfers() {
-  await delay();
-  const monthStart = toKey(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
-  const all = ledger.filter(e => e.type === 'transfer_in' || e.type === 'transfer_out');
-  const thisMonth = all.filter(e => e.date >= monthStart);
-  return {
-    balance: currentBalance(),
-    fee: program.walletRules.transferFee,
-    sentThisMonth: -sum(thisMonth.filter(e => e.type === 'transfer_out')),
-    receivedThisMonth: sum(thisMonth.filter(e => e.type === 'transfer_in')),
-    history: all,
-  };
+// ---------------------------------------------------------------------------
+// Transfer – same as web Transfer.jsx
+// GET  /api/v1/me/wallets
+// GET  /api/v1/me/profile
+// GET  /api/v1/me/transfers?page&limit
+// POST /api/v1/me/transfers
+// GET  /api/v1/public/referrals/:code (live recipient check)
+// ---------------------------------------------------------------------------
+export async function lookupReferral(code) {
+  return request(`/api/v1/public/referrals/${encodeURIComponent(code)}`, {
+    auth: false,
+  });
 }
 
-export async function sendTransfer({ to, amount }) {
-  await delay();
-  const n = Number(amount);
-  if (!to?.trim()) {
-    throw new Error('Enter the receiver’s email or referral code.');
-  }
-  if (!n || n <= 0) {
-    throw new Error('Enter an amount.');
-  }
-  if (n > currentBalance()) {
-    throw new Error('Amount is more than your balance.');
-  }
-  return { ok: true, reference: 'TR-' + Date.now().toString().slice(-6) };
+export async function getTransferList({ page = 1, limit = 8 } = {}) {
+  return request(`/api/v1/me/transfers?page=${page}&limit=${limit}`);
 }
 
-export async function getWithdrawals() {
-  await delay();
-  return {
-    available: currentBalance(),
-    locked: lockedAmount,
-    rules: program.walletRules.withdrawal,
-    savedAddresses: user.savedWithdrawAddresses,
-    requests: ledger
-      .filter(e => e.type === 'withdrawal')
-      .map(e => ({ ...e, gross: -e.amount, net: round2(-e.amount - e.fee) })),
-  };
+export async function createTransfer(body) {
+  return request('/api/v1/me/transfers', { method: 'POST', body });
 }
 
-export function quoteWithdrawal(amount) {
-  const gross = Number(amount) || 0;
-  const fee = round2(gross * program.walletRules.withdrawal.feeRate);
-  return { gross: round2(gross), fee, net: round2(gross - fee) };
+// ---------------------------------------------------------------------------
+// Withdraw – same as web Withdraw.jsx
+// GET  /api/v1/me/wallets
+// GET  /api/v1/me/destinations
+// GET  /api/v1/me/withdrawals?page&limit
+// POST /api/v1/me/withdrawals
+// POST /api/v1/me/withdrawals/verify
+// POST /api/v1/me/withdrawals/otp/resend
+// POST /api/v1/me/withdrawals/:id/cancel
+// ---------------------------------------------------------------------------
+export async function getDestinations() {
+  const res = await request('/api/v1/me/destinations');
+  return res.data || [];
 }
 
-export async function requestWithdrawal({ amount, address }) {
-  await delay();
-  const { min, max } = program.walletRules.withdrawal;
-  const n = Number(amount);
-  if (!n || n < min || n > max) {
-    throw new Error(`Amount must be between ${min} and ${max} USDT.`);
-  }
-  if (n > currentBalance()) {
-    throw new Error('Amount is more than your available balance.');
-  }
-  if (!/^0x[a-fA-F0-9]{40}$/.test(address || '')) {
-    throw new Error('Enter a valid BEP20 address (0x and 40 hex characters).');
-  }
-  return { ok: true, ...quoteWithdrawal(n) };
+/** POST /api/v1/me/destinations – web Addresses save */
+export async function createDestination(body) {
+  return request('/api/v1/me/destinations', { method: 'POST', body });
+}
+
+/** DELETE /api/v1/me/destinations/:id */
+export async function deleteDestination(id) {
+  return request(`/api/v1/me/destinations/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export async function getWithdrawalList({ page = 1, limit = 8 } = {}) {
+  return request(`/api/v1/me/withdrawals?page=${page}&limit=${limit}`);
+}
+
+/** POST create → OTP challenge in result.data */
+export async function createWithdrawal(body) {
+  return request('/api/v1/me/withdrawals', { method: 'POST', body });
+}
+
+export async function verifyWithdrawal(challengeId, otp) {
+  return request('/api/v1/me/withdrawals/verify', {
+    method: 'POST',
+    body: { challengeId, otp },
+  });
+}
+
+export async function resendWithdrawalOtp(challengeId) {
+  return request('/api/v1/me/withdrawals/otp/resend', {
+    method: 'POST',
+    body: { challengeId },
+  });
+}
+
+export async function cancelWithdrawal(id) {
+  return request(`/api/v1/me/withdrawals/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
 }
 
 // ---------------------------------------------------------------------------
@@ -418,6 +430,30 @@ export function getPackageSchedule(pkg, step = 20) {
   return { posted, scheduled };
 }
 
+// ---------------------------------------------------------------------------
+// My packages – same as web MyPackages.jsx
+// GET /api/v1/me/purchases?page&limit&status
+// ---------------------------------------------------------------------------
+const PURCHASE_PAGE = 50;
+const PURCHASE_MAX_PAGES = 6;
+
+export async function getPurchases({ page = 1, limit = 9, status = '' } = {}) {
+  const q = `page=${page}&limit=${limit}${status ? `&status=${encodeURIComponent(status)}` : ''}`;
+  return request(`/api/v1/me/purchases?${q}`);
+}
+
+/** Load every purchase page (portfolio summary + payout chart). */
+export async function loadAllPurchases() {
+  const first = await request(`/api/v1/me/purchases?page=1&limit=${PURCHASE_PAGE}`);
+  const pages = Math.min(PURCHASE_MAX_PAGES, Math.ceil((first.total || 0) / PURCHASE_PAGE));
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(0, pages - 1) }, (_, i) =>
+      request(`/api/v1/me/purchases?page=${i + 2}&limit=${PURCHASE_PAGE}`),
+    ),
+  );
+  return [first, ...rest].flatMap(page => page.data || []);
+}
+
 export async function getPlans() {
   await delay(200);
   return { plans: program.plans, balance: currentBalance() };
@@ -447,44 +483,65 @@ export async function buyPackage({ planId, amount }) {
 }
 
 // ---------------------------------------------------------------------------
-// Earnings
+// Buy package – same as web BuyPackages.jsx
+// GET /api/v1/me/package-options
+// POST /api/v1/me/purchases  { packageId, amount? }
 // ---------------------------------------------------------------------------
-export async function getEarnings() {
-  await delay();
-  const roi = sum(entriesOfType(['roi']));
-  const direct = sum(entriesOfType(['direct']));
-  const level = sum(entriesOfType(['level']));
-  const total = round2(roi + direct + level);
-  const scheduledTotal = round2(packages.reduce((s, p) => s + p.totalPayout, 0));
+export async function getPackageOptions() {
+  const res = await request('/api/v1/me/package-options');
+  return res.data || [];
+}
 
-  // Last 30 days, one row per day, split by source (for the stacked bar chart).
-  const daily = [];
-  for (let i = 29; i >= 0; i--) {
-    const key = toKey(addDays(TODAY, -i));
-    const dayEntries = ledger.filter(e => e.date === key);
-    daily.push({
-      date: key,
-      label: shortDate(key),
-      roi: sum(dayEntries.filter(e => e.type === 'roi')),
-      direct: sum(dayEntries.filter(e => e.type === 'direct')),
-      level: sum(dayEntries.filter(e => e.type === 'level')),
-    });
+export async function createPurchase({ packageId, amount }) {
+  const body = { packageId };
+  if (amount != null && amount !== '') body.amount = Number(amount);
+  const res = await request('/api/v1/me/purchases', { method: 'POST', body });
+  return res.data;
+}
+
+// ---------------------------------------------------------------------------
+// Earnings – same as web Earnings.jsx
+// GET /api/v1/me/earnings/summary
+// GET /api/v1/me/wallets
+// GET /api/v1/me/earnings/:key?page&limit  (daily | direct | levels)
+// ---------------------------------------------------------------------------
+const EARNINGS_DAY = 24 * 60 * 60 * 1000;
+const EARNINGS_WINDOW = 30;
+
+export async function getEarningsSummary() {
+  const res = await request('/api/v1/me/earnings/summary');
+  return res.data;
+}
+
+export async function getWallets() {
+  const res = await request('/api/v1/me/wallets');
+  return res.data;
+}
+
+/** Paginated history for one source key: daily | direct | levels */
+export async function getEarningsList(key, { page = 1, limit = 10 } = {}) {
+  return request(`/api/v1/me/earnings/${encodeURIComponent(key)}?page=${page}&limit=${limit}`);
+}
+
+/** Pages back through one earnings type until rows are older than the 30-day chart window. */
+export async function loadRecentEarnings(key) {
+  const since = Date.now() - EARNINGS_WINDOW * EARNINGS_DAY;
+  const rows = [];
+  for (let page = 1; page <= 6; page += 1) {
+    const body = await request(`/api/v1/me/earnings/${encodeURIComponent(key)}?page=${page}&limit=50`);
+    const data = body.data || [];
+    rows.push(...data);
+    const oldest = data[data.length - 1];
+    if (!oldest || new Date(oldest.createdAt).getTime() < since || page * 50 >= (body.total || 0)) break;
   }
+  return rows.filter(row => new Date(row.createdAt).getTime() >= since);
+}
 
-  return {
-    total,
-    last30: sum(entriesOfType(INCOME_TYPES, since(30))),
-    activePackages: packages.filter(p => p.status === 'Active').length,
-    balance: currentBalance(),
-    bySource: { roi, direct, level },
-    roiScheduledTotal: scheduledTotal,
-    daily,
-    history: {
-      Daily: entriesOfType(['roi']).slice(0, 20),
-      Direct: entriesOfType(['direct']),
-      Level: entriesOfType(['level']).slice(0, 20),
-    },
-  };
+/** Last-30-day rows for all three sources (chart). */
+export async function getEarningsChartRecent() {
+  const keys = ['daily', 'direct', 'levels'];
+  const results = await Promise.all(keys.map(key => loadRecentEarnings(key).catch(() => [])));
+  return Object.fromEntries(keys.map((key, i) => [key, results[i]]));
 }
 
 // ---------------------------------------------------------------------------
@@ -535,19 +592,43 @@ export async function getLevels() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Referral – same as web Referral.jsx
+// GET /api/v1/me/referral
+// GET /api/v1/me/team/direct
+// GET /api/v1/me/earnings/summary
+// GET /api/v1/me/wallets
+// GET /api/v1/me/team/levels?level=1..5  (via loadTeamLevels)
+// ---------------------------------------------------------------------------
 export async function getReferral() {
-  await delay();
-  const stats = teamStats();
-  return {
-    code: user.referralCode,
-    link: user.inviteLink,
-    ...stats,
-    directEarned: sum(entriesOfType(['direct'])),
-    levelEarned: sum(entriesOfType(['level'])),
-    recentDirects: teamMembers
-      .filter(m => m.level === 1)
-      .sort((a, b) => (a.joinedOn < b.joinedOn ? 1 : -1)),
-  };
+  const res = await request('/api/v1/me/referral');
+  return res.data;
+}
+
+export async function getTeamDirect() {
+  const res = await request('/api/v1/me/team/direct');
+  return res.data || [];
+}
+
+// ---------------------------------------------------------------------------
+// Team + Commission levels – same as web Team.jsx
+// GET /api/v1/me/commission-levels
+// GET /api/v1/me/team/levels?level=1..5
+// GET /api/v1/me/team/tree?depth=1..5
+// ---------------------------------------------------------------------------
+export async function getCommissionLevels() {
+  const res = await request('/api/v1/me/commission-levels');
+  return res.data;
+}
+
+export async function getTeamLevelMembers(level) {
+  const res = await request(`/api/v1/me/team/levels?level=${level}`);
+  return res.data || [];
+}
+
+export async function getTeamTree(depth = 3) {
+  const res = await request(`/api/v1/me/team/tree?depth=${depth}`);
+  return res.data || [];
 }
 
 // ---------------------------------------------------------------------------
@@ -680,39 +761,72 @@ export function getWalletChartSeries(series, range = '30D') {
 }
 
 // ---------------------------------------------------------------------------
-// Notifications & support
+// Notifications – same as web Account.jsx Notifications
+// GET /api/v1/me/notifications?page&limit
+// POST /api/v1/me/notifications/:id/read
+// POST /api/v1/me/notifications/read-all
 // ---------------------------------------------------------------------------
-export async function getNotifications() {
-  await delay();
-  return notificationsStore.map(n => ({ ...n }));
+export async function getNotifications({ page = 1, limit = 12 } = {}) {
+  return request(`/api/v1/me/notifications?page=${page}&limit=${limit}`);
+}
+
+export async function markNotificationRead(id) {
+  return request(`/api/v1/me/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' });
 }
 
 export async function markAllNotificationsRead() {
-  await delay(150);
-  notificationsStore = notificationsStore.map(n => ({ ...n, read: true }));
-  return notificationsStore.map(n => ({ ...n }));
+  return request('/api/v1/me/notifications/read-all', { method: 'POST' });
 }
 
-export async function getSupportTickets() {
-  await delay();
-  return { tickets: ticketsStore.map(t => ({ ...t })), contact: program.support };
+/**
+ * Support – same as web Account.jsx Support.
+ * GET /api/v1/me/tickets?page&limit&status
+ * GET /api/v1/me/tickets/:id
+ * POST /api/v1/me/tickets (FormData subject/message/attachment)
+ * POST /api/v1/me/tickets/:id/messages (FormData message/attachment)
+ */
+export async function getSupportTickets({ page = 1, limit = 10, status = '' } = {}) {
+  const q = `page=${page}&limit=${limit}${status ? `&status=${encodeURIComponent(status)}` : ''}`;
+  return request(`/api/v1/me/tickets?${q}`);
 }
 
-export async function createTicket(subject) {
-  await delay();
-  if (!subject?.trim()) {
-    throw new Error('Tell us what you need help with.');
+export async function getSupportTicket(id) {
+  const res = await request(`/api/v1/me/tickets/${encodeURIComponent(id)}`);
+  return res.data;
+}
+
+/** Create ticket. Optional `attachment`: { uri, type?, name? }. */
+export async function createTicket({ subject, message, attachment } = {}) {
+  const form = new FormData();
+  form.append('subject', String(subject || '').trim());
+  form.append('message', String(message || '').trim());
+  if (attachment?.uri) {
+    form.append('attachment', {
+      uri: attachment.uri,
+      type: attachment.type || 'image/jpeg',
+      name: attachment.name || 'attachment.jpg',
+    });
   }
-  const ticket = {
-    id: String(1058 + ticketsStore.length),
-    subject: subject.trim(),
-    status: 'Open',
-    createdOn: toKey(TODAY),
-    lastReply: 'Waiting for the team to reply.',
-    messages: 1,
-  };
-  ticketsStore = [ticket, ...ticketsStore];
-  return ticket;
+  const res = await request('/api/v1/me/tickets', { method: 'POST', form });
+  return res.data;
+}
+
+/** Reply on a ticket. Optional `attachment`: { uri, type?, name? }. */
+export async function replyToTicket(id, { message, attachment } = {}) {
+  const form = new FormData();
+  if (message) form.append('message', String(message));
+  if (attachment?.uri) {
+    form.append('attachment', {
+      uri: attachment.uri,
+      type: attachment.type || 'image/jpeg',
+      name: attachment.name || 'attachment.jpg',
+    });
+  }
+  const res = await request(`/api/v1/me/tickets/${encodeURIComponent(id)}/messages`, {
+    method: 'POST',
+    form,
+  });
+  return res.data;
 }
 
 // Small helper some screens use for "x days ago" style labels.

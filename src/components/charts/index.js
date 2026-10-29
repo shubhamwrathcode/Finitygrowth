@@ -9,5 +9,6 @@ export { default as StackedBarChart } from './StackedBarChart';
 export { default as CashFlowChart } from './CashFlowChart';
 export { default as SimpleBarChart } from './SimpleBarChart';
 export { default as ScheduleChart } from './ScheduleChart';
+export { default as PayoutChart } from './PayoutChart';
 export { ProgressRing, SegmentGauge } from './Rings';
 export { default as Legend } from './Legend';

@@ -28,6 +28,7 @@ export const ROUTES = {
   DEPOSIT: 'Deposit',
   TRANSFER: 'Transfer',
   WITHDRAW: 'Withdraw',
+  ADDRESSES: 'Addresses',
   LEVELS: 'Levels',
   REFERRAL: 'Referral',
   SUPPORT: 'Support',

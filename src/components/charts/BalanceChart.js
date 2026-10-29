@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { PanResponder, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Svg, {
   Defs,
   Line,
@@ -21,67 +21,52 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const MARGIN_TOP = 0.12;
 const MARGIN_BOTTOM = 0.32;
 const RANGE_DAYS = { '7D': 7, '30D': 30, '90D': 90, All: 0 };
+const DAY_W = 16;
+const Y_AXIS_W = 44;
+const PAD_L = 8;
+const PAD_T = 6;
+const PAD_B = 26;
+const X_TICK_EVERY = 4;
+
+function shouldShowXLabel(index, total) {
+  if (index % X_TICK_EVERY === 0) return true;
+  if (index === total - 1) {
+    const prevTick = Math.floor((total - 2) / X_TICK_EVERY) * X_TICK_EVERY;
+    return index - prevTick >= 2;
+  }
+  return false;
+}
 
 /**
- * Wallet balance chart — web TradingChart (lightweight-charts) behaviour:
- * - visible window = last N days for range (7D/30D/90D/All)
- * - X ticks = TickMarks._buildMarksImpl + defaultTickMarkFormatter
- * - horizontal pan shifts the window; X labels update with it
+ * Wallet balance chart — web TradingChart look with Earnings-style
+ * horizontal ScrollView so X labels stay locked to each day.
  */
 export default function BalanceChart({ series, range = '30D', width, height = 200, onFocus }) {
-  const n = series?.length || 0;
-  const windowSize = useMemo(() => {
-    const days = RANGE_DAYS[range] || 0;
-    if (!days || !n) return Math.max(n, 1);
-    return Math.min(days, n);
-  }, [range, n]);
-
-  // How many bars we’ve panned back from the latest (0 = latest window, like web default)
-  const [back, setBack] = useState(0);
-  const backRef = useRef(0);
+  const scrollRef = useRef(null);
   const [focusIdx, setFocusIdx] = useState(-1);
-  const focusRef = useRef(-1);
-  const dragRef = useRef({ mode: null, startBack: 0, startX: 0 });
 
-  const maxBack = Math.max(0, n - windowSize);
+  const all = series || [];
+  const days = RANGE_DAYS[range] || 0;
+  const data = useMemo(() => {
+    if (!all.length) return [];
+    if (!days || all.length <= days) return all;
+    return all.slice(-days);
+  }, [all, days]);
 
-  useEffect(() => {
-    backRef.current = back;
-  }, [back]);
-
-  // Range change → latest window (web setVisibleLogicalRange to end)
-  useEffect(() => {
-    setBack(0);
-    backRef.current = 0;
-    setFocusIdx(-1);
-    focusRef.current = -1;
-    onFocus?.(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, n, windowSize]);
-
-  const end = n - 1 - back;
-  const start = Math.max(0, end - windowSize + 1);
-  const visible = useMemo(
-    () => (n ? series.slice(start, end + 1) : []),
-    [series, start, end, n],
-  );
-  const vn = visible.length;
-
-  const padL = 4;
-  const padR = 44;
-  const padT = 6;
-  const padB = 22;
-  const plotW = Math.max(width - padL - padR, 80);
-  const plotH = Math.max(height - padT - padB, 80);
-  const chartH = padT + plotH + padB;
-  const chartW = padL + plotW + padR;
-  const pxPerPoint = vn > 1 ? plotW / (vn - 1) : plotW;
+  const n = data.length;
+  const viewportW = Math.max(width, 120);
+  const plotNeed = n > 1 ? (n - 1) * DAY_W : DAY_W;
+  const contentPlotW = Math.max(plotNeed, viewportW - PAD_L - Y_AXIS_W);
+  const chartW = PAD_L + contentPlotW + Y_AXIS_W;
+  const plotH = Math.max(height - PAD_T - PAD_B, 80);
+  const chartH = PAD_T + plotH + PAD_B;
+  const pxPerPoint = n > 1 ? contentPlotW / (n - 1) : contentPlotW;
 
   const layout = useMemo(() => {
-    if (!vn) return null;
+    if (!n) return null;
 
-    const values = visible.map(p => Number(p.balance) || 0);
-    const incomes = visible.map(p => Number(p.income) || 0);
+    const values = data.map(p => Number(p.balance) || 0);
+    const incomes = data.map(p => Number(p.income) || 0);
     const rawMin = Math.min(...values);
     const rawMax = Math.max(...values);
     const dataSpan = rawMax - rawMin;
@@ -97,36 +82,45 @@ export default function BalanceChart({ series, range = '30D', width, height = 20
       yMin = rawMin - dataSpan * (MARGIN_BOTTOM / dataFrac);
     }
 
-    const xAt = i => padL + (vn === 1 ? plotW / 2 : i * pxPerPoint);
-    const yAt = v => padT + ((yMax - v) / (yMax - yMin)) * plotH;
-    const bottomY = padT + plotH;
+    const xAt = i => PAD_L + (n === 1 ? contentPlotW / 2 : i * pxPerPoint);
+    const yAt = v => PAD_T + ((yMax - v) / (yMax - yMin)) * plotH;
+    const bottomY = PAD_T + plotH;
 
     const points = values.map((v, i) => ({
       x: xAt(i),
       y: yAt(v),
       v,
-      date: visible[i].date || visible[i].label,
-      income: Number(visible[i].income) || 0,
+      date: data[i].date || data[i].label,
+      income: Number(data[i].income) || 0,
     }));
 
     const lineD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
     const areaD =
       points.length > 0
-        ? `${lineD} L${points[vn - 1].x.toFixed(2)} ${bottomY} L${points[0].x.toFixed(2)} ${bottomY} Z`
+        ? `${lineD} L${points[n - 1].x.toFixed(2)} ${bottomY} L${points[0].x.toFixed(2)} ${bottomY} Z`
         : '';
 
     const incomeMax = Math.max(...incomes, 0.0001);
     const barMaxH = plotH * (1 - MARGIN_BOTTOM + 0.02) * 0.28;
-    const barW = Math.min(5, Math.max(2, pxPerPoint * 0.4));
+    const barW = Math.min(5, Math.max(2.5, pxPerPoint * 0.45));
     const bars = incomes.map((v, i) => {
       const h = (v / incomeMax) * barMaxH;
       return { x: xAt(i) - barW / 2, y: bottomY - h, w: barW, h, show: v > 0 };
     });
 
-    const yLabels = niceTicks(yMin, yMax, 8).map(v => ({ v, y: yAt(v) }));
+    const yLabels = niceTicks(yMin, yMax, 6).map(v => ({ v, y: yAt(v) }));
 
-    // X labels — exact lightweight-charts TickMarks (same as web TradingChart)
-    const xLabels = buildLwcXLabels(series, start, end, i => xAt(i - start), plotW);
+    // Day-of-month labels locked to points (same cadence as Earnings X ticks)
+    const xLabels = [];
+    for (let i = 0; i < n; i += 1) {
+      if (!shouldShowXLabel(i, n)) continue;
+      const d = parseDay(data[i].date || data[i].label);
+      if (!d) continue;
+      xLabels.push({
+        x: xAt(i),
+        label: formatXLabel(d, i, n, data),
+      });
+    }
 
     return {
       points,
@@ -136,89 +130,41 @@ export default function BalanceChart({ series, range = '30D', width, height = 20
       yLabels,
       xLabels,
       bottomY,
-      last: points[vn - 1],
-      yAt,
-      pxPerPoint,
+      last: points[n - 1],
     };
-  }, [series, start, end, visible, vn, plotW, plotH, pxPerPoint, padL, padT]);
+  }, [data, n, contentPlotW, plotH, pxPerPoint]);
+
+  // Latest days first in view — scroll to end (like web default visible range)
+  useEffect(() => {
+    setFocusIdx(-1);
+    onFocus?.(null);
+    const id = requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd?.({ animated: false });
+    });
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range, n, chartW]);
 
   const emitFocus = idx => {
-    if (focusRef.current === idx) return;
-    focusRef.current = idx;
     setFocusIdx(idx);
-    if (idx < 0 || !visible[idx]) {
+    if (idx < 0 || !data[idx]) {
       onFocus?.(null);
       return;
     }
-    const p = visible[idx];
+    const p = data[idx];
     onFocus({ date: p.date, balance: p.balance, income: p.income || 0 });
   };
 
-  const pan = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 4 || Math.abs(g.dy) > 4,
-        onMoveShouldSetPanResponderCapture: (_, g) => Math.abs(g.dx) > Math.abs(g.dy) && Math.abs(g.dx) > 6,
-        onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: e => {
-          dragRef.current = {
-            mode: null,
-            startBack: backRef.current,
-            startX: e.nativeEvent.locationX,
-          };
-        },
-        onPanResponderMove: (e, g) => {
-          if (!layout) return;
-          const absX = Math.abs(g.dx);
-          const absY = Math.abs(g.dy);
-          const drag = dragRef.current;
+  const onChartPress = evt => {
+    if (!layout || !n) return;
+    const x = evt.nativeEvent.locationX;
+    const idx = Math.round(Math.max(0, Math.min(n - 1, (x - PAD_L) / pxPerPoint)));
+    emitFocus(focusIdx === idx ? -1 : idx);
+  };
 
-          if (!drag.mode) {
-            if (absX < 8 && absY < 8) return;
-            drag.mode = maxBack > 0 && absX > absY ? 'scroll' : 'focus';
-          }
-
-          if (drag.mode === 'scroll') {
-            // Finger right → older history (increase back)
-            const shift = Math.round(g.dx / layout.pxPerPoint);
-            const next = Math.max(0, Math.min(maxBack, drag.startBack + shift));
-            if (next !== backRef.current) {
-              backRef.current = next;
-              setBack(next);
-            }
-            emitFocus(-1);
-            return;
-          }
-
-          const x = e.nativeEvent.locationX;
-          const t = Math.max(0, Math.min(1, (x - padL) / plotW));
-          emitFocus(Math.round(t * (vn - 1)));
-        },
-        onPanResponderRelease: e => {
-          const drag = dragRef.current;
-          if (drag.mode !== 'scroll' && layout) {
-            const x = e.nativeEvent.locationX;
-            const t = Math.max(0, Math.min(1, (x - padL) / plotW));
-            emitFocus(Math.round(t * (vn - 1)));
-            setTimeout(() => emitFocus(-1), 2200);
-          } else {
-            emitFocus(-1);
-          }
-          dragRef.current.mode = null;
-        },
-        onPanResponderTerminate: () => {
-          emitFocus(-1);
-          dragRef.current.mode = null;
-        },
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layout, vn, maxBack, plotW, padL],
-  );
-
-  if (!vn || !layout) {
+  if (!n || !layout) {
     return (
-      <View style={[styles.wrap, { width, height: 80 }]}>
+      <View style={[styles.wrap, { width: viewportW, height: 80 }]}>
         <Text style={styles.empty}>No ledger history yet to build a balance chart.</Text>
       </View>
     );
@@ -228,115 +174,138 @@ export default function BalanceChart({ series, range = '30D', width, height = 20
   const price = active || layout.last;
 
   return (
-    <View style={[styles.wrap, { width: chartW, height: chartH }]} {...pan.panHandlers}>
-      <Svg width={chartW} height={chartH}>
-        <Defs>
-          <LinearGradient id="balShadow" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0%" stopColor={GOLD} stopOpacity="0.32" />
-            <Stop offset="55%" stopColor={GOLD} stopOpacity="0.08" />
-            <Stop offset="100%" stopColor={GOLD} stopOpacity="0.01" />
-          </LinearGradient>
-        </Defs>
+    <View style={[styles.wrap, { width: viewportW }]}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        nestedScrollEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator
+        bounces={false}
+        style={{ width: viewportW }}
+        contentContainerStyle={{ width: chartW }}>
+        <Pressable onPress={onChartPress}>
+          <Svg width={chartW} height={chartH}>
+            <Defs>
+              <LinearGradient id="balShadow" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0%" stopColor={GOLD} stopOpacity="0.32" />
+                <Stop offset="55%" stopColor={GOLD} stopOpacity="0.08" />
+                <Stop offset="100%" stopColor={GOLD} stopOpacity="0.01" />
+              </LinearGradient>
+            </Defs>
 
-        {layout.yLabels.map((t, i) => (
-          <Line
-            key={`h${i}`}
-            x1={padL}
-            y1={t.y}
-            x2={padL + plotW}
-            y2={t.y}
-            stroke={GRID}
-            strokeWidth={1}
-          />
-        ))}
+            {layout.yLabels.map((t, i) => (
+              <Line
+                key={`h${i}`}
+                x1={PAD_L}
+                y1={t.y}
+                x2={PAD_L + contentPlotW}
+                y2={t.y}
+                stroke={GRID}
+                strokeWidth={1}
+              />
+            ))}
 
-        {layout.xLabels.map((t, i) => (
-          <Line
-            key={`v${i}`}
-            x1={t.x}
-            y1={padT}
-            x2={t.x}
-            y2={layout.bottomY}
-            stroke="rgba(255,255,255,0.04)"
-            strokeWidth={1}
-          />
-        ))}
+            {layout.xLabels.map((t, i) => (
+              <Line
+                key={`v${i}`}
+                x1={t.x}
+                y1={PAD_T}
+                x2={t.x}
+                y2={layout.bottomY}
+                stroke="rgba(255,255,255,0.04)"
+                strokeWidth={1}
+              />
+            ))}
 
-        {layout.bars.map((b, i) =>
-          b.show ? (
-            <Rect key={`b${i}`} x={b.x} y={b.y} width={b.w} height={b.h} fill={INCOME_BAR} rx={1} />
-          ) : null,
-        )}
+            {layout.bars.map((b, i) =>
+              b.show ? (
+                <Rect key={`b${i}`} x={b.x} y={b.y} width={b.w} height={b.h} fill={INCOME_BAR} rx={1} />
+              ) : null,
+            )}
 
-        <Path d={layout.areaD} fill="url(#balShadow)" />
-        <Path
-          d={layout.lineD}
-          stroke={GOLD}
-          strokeWidth={2}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-
-        {active ? (
-          <>
-            <Line
-              x1={active.x}
-              y1={padT}
-              x2={active.x}
-              y2={layout.bottomY}
-              stroke="rgba(227,191,122,0.4)"
-              strokeWidth={1}
-              strokeDasharray="4 4"
+            <Path d={layout.areaD} fill="url(#balShadow)" />
+            <Path
+              d={layout.lineD}
+              stroke={GOLD}
+              strokeWidth={2}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-            <Circle cx={active.x} cy={active.y} r={4.5} fill={GOLD_HI} stroke="#07080c" strokeWidth={2} />
-            <CrosshairLabels active={active} padL={padL} plotW={plotW} bottomY={layout.bottomY} chartH={chartH} />
-          </>
-        ) : null}
 
-        {/* Y-axis */}
-        {layout.yLabels.map((t, i) => (
-          <SvgText
-            key={`yl${i}`}
-            x={padL + plotW + 6}
-            y={t.y + 3}
-            fill={AXIS}
-            fontSize="10"
-            fontFamily={fonts.regular}>
-            {formatPrice(t.v)}
-          </SvgText>
-        ))}
+            {active ? (
+              <>
+                <Line
+                  x1={active.x}
+                  y1={PAD_T}
+                  x2={active.x}
+                  y2={layout.bottomY}
+                  stroke="rgba(227,191,122,0.4)"
+                  strokeWidth={1}
+                  strokeDasharray="4 4"
+                />
+                <Circle cx={active.x} cy={active.y} r={4.5} fill={GOLD_HI} stroke="#07080c" strokeWidth={2} />
+                <CrosshairLabels
+                  active={active}
+                  padL={PAD_L}
+                  plotW={contentPlotW}
+                  bottomY={layout.bottomY}
+                  chartH={chartH}
+                />
+              </>
+            ) : null}
 
-        {price ? (
-          <>
-            <Rect x={padL + plotW + 2} y={price.y - 8} width={40} height={15} rx={2} fill={GOLD} />
-            <SvgText
-              x={padL + plotW + 22}
-              y={price.y + 3}
-              fill="#17120a"
-              fontSize="9"
-              fontFamily={fonts.semibold}
-              fontWeight="700"
-              textAnchor="middle">
-              {formatPrice(price.v)}
-            </SvgText>
-          </>
-        ) : null}
+            {layout.yLabels.map((t, i) => (
+              <SvgText
+                key={`yl${i}`}
+                x={PAD_L + contentPlotW + 6}
+                y={t.y + 3}
+                fill={AXIS}
+                fontSize="10"
+                fontFamily={fonts.regular}>
+                {formatPrice(t.v)}
+              </SvgText>
+            ))}
 
-        {/* X-axis — days from the visible window only */}
-        {layout.xLabels.map((t, i) => (
-          <SvgText
-            key={`xl${i}`}
-            x={t.x}
-            y={chartH - 5}
-            fill={AXIS}
-            fontSize="11"
-            fontFamily={fonts.regular}
-            textAnchor="middle">
-            {t.label}
-          </SvgText>
-        ))}
-      </Svg>
+            {price ? (
+              <>
+                <Rect
+                  x={PAD_L + contentPlotW + 2}
+                  y={price.y - 8}
+                  width={40}
+                  height={15}
+                  rx={2}
+                  fill={GOLD}
+                />
+                <SvgText
+                  x={PAD_L + contentPlotW + 22}
+                  y={price.y + 3}
+                  fill="#17120a"
+                  fontSize="9"
+                  fontFamily={fonts.semibold}
+                  fontWeight="700"
+                  textAnchor="middle">
+                  {formatPrice(price.v)}
+                </SvgText>
+              </>
+            ) : null}
+
+            {layout.xLabels.map((t, i) => (
+              <SvgText
+                key={`xl${i}`}
+                x={t.x}
+                y={chartH - 6}
+                fill={AXIS}
+                fontSize="11"
+                fontFamily={fonts.regular}
+                textAnchor="middle">
+                {t.label}
+              </SvgText>
+            ))}
+          </Svg>
+        </Pressable>
+      </ScrollView>
       <Text style={styles.tvMark}>TV</Text>
     </View>
   );
@@ -345,148 +314,6 @@ export default function BalanceChart({ series, range = '30D', width, height = 20
 function formatPrice(v) {
   if (!Number.isFinite(v)) return '0.00';
   return Number(v).toFixed(2);
-}
-
-/**
- * X-axis ticks — port of lightweight-charts TickMarks._buildMarksImpl +
- * defaultTickMarkFormatter (web TradingChart uses createChart defaults, no custom formatter).
- *
- * Weights (HorzScaleBehaviorTime.weightByTime):
- *   Year 70 · Month 60 · Day 50
- * Spacing: maxLabelWidth = (fontSize + 4) * 5, maxIndexesPerMark = ceil(maxLabelWidth / barSpacing)
- * Labels: Year → year, Month → short month, Day → day-of-month number
- */
-function buildLwcXLabels(series, start, end, xAtGlobal, plotW) {
-  const n = series?.length || 0;
-  const vn = end - start + 1;
-  if (!n || vn <= 0 || start < 0 || end >= n) return [];
-
-  // TradingChart: setVisibleLogicalRange → barSpacing = width / days;
-  // All / short history → fitContent() with rightOffset: 2 → width / (bars + 2)
-  const fitContent = start === 0 && end === n - 1;
-  const barSpacing = plotW / Math.max(fitContent ? vn + 2 : vn, 1);
-  const fontSize = 11;
-  const maxLabelWidth = (fontSize + 4) * 5;
-  const maxIndexesPerMark = Math.max(1, Math.ceil(maxLabelWidth / barSpacing));
-
-  const dates = new Array(n);
-  for (let i = 0; i < n; i += 1) {
-    dates[i] = parseDayUtc(series[i].date || series[i].label);
-  }
-
-  const weights = fillLwcTimeWeights(dates);
-  const marksByWeight = new Map();
-  for (let i = 0; i < n; i += 1) {
-    const w = weights[i];
-    if (!marksByWeight.has(w)) marksByWeight.set(w, []);
-    marksByWeight.get(w).push({ index: i, weight: w, date: dates[i] });
-  }
-
-  const marks = buildLwcMarksImpl(marksByWeight, maxIndexesPerMark);
-  const out = [];
-  for (let i = 0; i < marks.length; i += 1) {
-    const tm = marks[i];
-    if (tm.index < start || tm.index > end) continue;
-    if (!tm.date) continue;
-    out.push({ x: xAtGlobal(tm.index), label: formatLwcTick(tm.date, tm.weight) });
-  }
-  return out;
-}
-
-/** UTC calendar date from YYYY-MM-DD (business-day, same as LWC string converter) */
-function parseDayUtc(value) {
-  if (!value) return null;
-  const s = String(value);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const y = Number(s.slice(0, 4));
-    const m = Number(s.slice(5, 7));
-    const d = Number(s.slice(8, 10));
-    return new Date(Date.UTC(y, m - 1, d));
-  }
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
-}
-
-function lwcWeightByTime(current, prev) {
-  if (current.getUTCFullYear() !== prev.getUTCFullYear()) return 70;
-  if (current.getUTCMonth() !== prev.getUTCMonth()) return 60;
-  if (current.getUTCDate() !== prev.getUTCDate()) return 50;
-  return 50;
-}
-
-/** fillWeightsForPoints from lightweight-charts */
-function fillLwcTimeWeights(dates) {
-  const n = dates.length;
-  const weights = new Array(n).fill(50);
-  if (!n) return weights;
-
-  let totalDiff = 0;
-  for (let i = 1; i < n; i += 1) {
-    const cur = dates[i];
-    const prev = dates[i - 1];
-    if (cur && prev) {
-      weights[i] = lwcWeightByTime(cur, prev);
-      totalDiff += (cur.getTime() - prev.getTime()) / 1000;
-    }
-  }
-  if (n > 1 && dates[0]) {
-    const avg = Math.ceil(totalDiff / (n - 1));
-    const approxPrev = new Date(dates[0].getTime() - avg * 1000);
-    weights[0] = lwcWeightByTime(dates[0], approxPrev);
-  }
-  return weights;
-}
-
-/** TickMarks._private__buildMarksImpl — higher weights first, then fill gaps */
-function buildLwcMarksImpl(marksByWeight, maxIndexesPerMark) {
-  let marks = [];
-  const weights = Array.from(marksByWeight.keys()).sort((a, b) => b - a);
-  for (let wi = 0; wi < weights.length; wi += 1) {
-    const prevMarks = marks;
-    marks = [];
-    const prevMarksLength = prevMarks.length;
-    let prevMarksPointer = 0;
-    const currentWeight = marksByWeight.get(weights[wi]) || [];
-    let rightIndex = Infinity;
-    let leftIndex = -Infinity;
-    for (let i = 0; i < currentWeight.length; i += 1) {
-      const mark = currentWeight[i];
-      const currentIndex = mark.index;
-      while (prevMarksPointer < prevMarksLength) {
-        const lastMark = prevMarks[prevMarksPointer];
-        const lastIndex = lastMark.index;
-        if (lastIndex < currentIndex) {
-          prevMarksPointer += 1;
-          marks.push(lastMark);
-          leftIndex = lastIndex;
-          rightIndex = Infinity;
-        } else {
-          rightIndex = lastIndex;
-          break;
-        }
-      }
-      if (rightIndex - currentIndex >= maxIndexesPerMark && currentIndex - leftIndex >= maxIndexesPerMark) {
-        marks.push(mark);
-        leftIndex = currentIndex;
-      }
-    }
-    for (; prevMarksPointer < prevMarksLength; prevMarksPointer += 1) {
-      marks.push(prevMarks[prevMarksPointer]);
-    }
-  }
-  return marks;
-}
-
-/** defaultTickMarkFormatter + weightToTickMarkType (timeVisible=false) */
-function formatLwcTick(date, weight) {
-  if (weight >= 70) {
-    return String(date.getUTCFullYear());
-  }
-  if (weight >= 60) {
-    return MONTHS[date.getUTCMonth()];
-  }
-  return String(date.getUTCDate());
 }
 
 function parseDay(value) {
@@ -498,6 +325,21 @@ function parseDay(value) {
   }
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Prefer day number; show month at first / month-change ticks for context */
+function formatXLabel(date, index, total, data) {
+  const day = String(date.getDate());
+  if (index === 0) return `${day} ${MONTHS[date.getMonth()]}`;
+  const prev = parseDay(data[index - 1]?.date || data[index - 1]?.label);
+  if (prev && prev.getMonth() !== date.getMonth()) {
+    return MONTHS[date.getMonth()];
+  }
+  if (index === total - 1) {
+    const prevTick = Math.floor((total - 2) / X_TICK_EVERY) * X_TICK_EVERY;
+    if (index - prevTick >= 2) return day;
+  }
+  return day;
 }
 
 function formatFocusDay(time) {
@@ -524,7 +366,15 @@ function CrosshairLabels({ active, padL, plotW, bottomY, chartH }) {
 
   return (
     <>
-      <Rect x={tipX} y={tipY} width={tipW} height={tipH} rx={6} fill="#1c2130" stroke="rgba(227,191,122,0.35)" />
+      <Rect
+        x={tipX}
+        y={tipY}
+        width={tipW}
+        height={tipH}
+        rx={6}
+        fill="#1c2130"
+        stroke="rgba(227,191,122,0.35)"
+      />
       <SvgText x={tipX + 8} y={tipY + 14} fill="#8c93a6" fontSize="9" fontFamily={fonts.regular}>
         {dateText}
       </SvgText>
@@ -551,7 +401,7 @@ function CrosshairLabels({ active, padL, plotW, bottomY, chartH }) {
   );
 }
 
-function niceTicks(min, max, target = 8) {
+function niceTicks(min, max, target = 6) {
   const span = max - min;
   if (!(span > 0)) return [min];
   const rough = span / target;
@@ -576,7 +426,7 @@ const styles = StyleSheet.create({
   tvMark: {
     position: 'absolute',
     left: 6,
-    bottom: 20,
+    bottom: 22,
     fontFamily: fonts.bold,
     fontSize: 10,
     color: 'rgba(255,255,255,0.2)',

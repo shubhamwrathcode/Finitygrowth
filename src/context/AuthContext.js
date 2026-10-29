@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useEffect, useMemo } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuthStore } from '../store/authStore';
-import { colors } from '../theme';
 
 /**
  * AuthProvider – waits for Zustand persist hydration, then exposes useAuth().
  * Screens keep using useAuth(); storage is Zustand + AsyncStorage.
+ * Boot UI (Lottie splash) lives in App.js — do not block children here.
  */
 const AuthContext = createContext(null);
 
@@ -37,14 +36,6 @@ export function AuthProvider({ children }) {
     [token, user, setSession, signOut, hydrated],
   );
 
-  if (!hydrated) {
-    return (
-      <View style={styles.boot}>
-        <ActivityIndicator color={colors.gold} size="large" />
-      </View>
-    );
-  }
-
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
@@ -55,12 +46,3 @@ export function useAuth() {
   }
   return ctx;
 }
-
-const styles = StyleSheet.create({
-  boot: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

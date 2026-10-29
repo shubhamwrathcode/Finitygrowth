@@ -28,6 +28,7 @@ export default function Field({
   const [hidden, setHidden] = useState(secure);
   const [focused, setFocused] = useState(false);
   const underline = variant === 'underline';
+  const multiline = Boolean(inputProps.multiline);
   const hasError = Boolean(error);
 
   return (
@@ -41,7 +42,8 @@ export default function Field({
       <View
         style={[
           styles.box,
-          underline ? styles.underline : styles.filled,
+          underline ? (multiline ? styles.underlineMulti : styles.underline) : styles.filled,
+          multiline && !underline && styles.filledMulti,
           focused && !hasError && (underline ? styles.underlineFocus : styles.filledFocus),
           hasError && (underline ? styles.underlineError : styles.filledError),
         ]}>
@@ -49,7 +51,7 @@ export default function Field({
           placeholderTextColor={colors.placeholder}
           selectionColor={hasError ? colors.danger : colors.gold}
           secureTextEntry={hidden}
-          style={[styles.input, inputStyle]}
+          style={[styles.input, multiline && styles.inputMulti, inputStyle]}
           {...inputProps}
           onFocus={e => {
             setFocused(true);
@@ -111,6 +113,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.5,
     borderBottomColor: colors.lineStrong,
   },
+  underlineMulti: {
+    minHeight: 96,
+    paddingTop: 8,
+    paddingBottom: 10,
+    alignItems: 'flex-start',
+    borderBottomWidth: 1.5,
+    borderBottomColor: colors.lineStrong,
+  },
+  filledMulti: {
+    height: undefined,
+    minHeight: 96,
+    paddingVertical: 10,
+    alignItems: 'flex-start',
+  },
   underlineFocus: {
     borderBottomColor: colors.gold,
   },
@@ -119,6 +135,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
   },
   input: { flex: 1, color: colors.text, fontFamily: fonts.regular, fontSize: 15, paddingVertical: 0 },
+  inputMulti: { minHeight: 80, textAlignVertical: 'top', paddingTop: 0 },
   eye: { paddingLeft: 10 },
   hint: { marginTop: 6, fontFamily: fonts.regular, fontSize: 11, color: colors.subtle },
   errorRow: {

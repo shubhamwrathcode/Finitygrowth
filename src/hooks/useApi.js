@@ -25,7 +25,7 @@ export default function useApi(fetcher, deps = []) {
     try {
       const result = await load();
       if (mounted.current) {
-        setData(result);
+        setData(result ?? null);
       }
     } catch (e) {
       if (mounted.current) {

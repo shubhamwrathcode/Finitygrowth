@@ -17,8 +17,8 @@ export default function Legend({ items, style }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 10 },
-  item: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  swatch: { width: 10, height: 10, borderRadius: 3 },
-  label: { fontFamily: fonts.regular, fontSize: 11, color: colors.muted },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  swatch: { width: 8, height: 8, borderRadius: 4 },
+  label: { fontFamily: fonts.regular, fontSize: 10, color: colors.muted },
 });

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { usePreventRemove } from '@react-navigation/native';
 import { Screen, Header, Button, AuthField, OtpStep } from '../../components';
 import { ImageAsset } from '../../components/ImageAssets';
 import { useAuth } from '../../context/AuthContext';
+import useInScreenBack from '../../hooks/useInScreenBack';
 import { ROUTES } from '../../navigation/routes';
 import * as api from '../../services/api';
 import { warmApi } from '../../services/http';
@@ -30,16 +30,7 @@ export default function LoginScreen({ navigation, route }) {
   }, []);
 
   // OTP is in-screen state, not a stack route — back should leave OTP, not Login.
-  useEffect(() => {
-    navigation.setOptions({ gestureEnabled: !challenge });
-  }, [navigation, challenge]);
-  usePreventRemove(Boolean(challenge), ({ data }) => {
-    if (data.action.type === 'GO_BACK' || data.action.type === 'POP') {
-      setChallenge(null);
-      return;
-    }
-    navigation.dispatch(data.action);
-  });
+  useInScreenBack(Boolean(challenge), () => setChallenge(null));
 
   const errors = useMemo(() => validateLogin({ userId, password }), [userId, password]);
 

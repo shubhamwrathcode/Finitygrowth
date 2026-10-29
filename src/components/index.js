@@ -17,4 +17,5 @@ export { default as HeroBackground } from './HeroBackground';
 export { default as Logo } from './Logo';
 export { default as AppIcon } from './AppIcon';
 export { default as OtpStep } from './OtpStep';
+export { default as SplashScreen } from './SplashScreen';
 export { Badge, Avatar, IconCircle, Row, ListItem, EmptyState, Loading, ErrorView, Notice } from './Misc';

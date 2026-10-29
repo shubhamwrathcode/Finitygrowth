@@ -25,6 +25,7 @@ import {
   ErrorView,
 } from '../../components';
 import useApi from '../../hooks/useApi';
+import useInScreenBack from '../../hooks/useInScreenBack';
 import * as api from '../../services/api';
 import { imageUrl } from '../../services/http';
 import { useAuth } from '../../context/AuthContext';
@@ -58,6 +59,8 @@ export default function ProfileScreen({ navigation }) {
   const [errors, setErrors] = useState({});
   const [copied, setCopied] = useState('');
   const pendingPickerRef = useRef(null);
+
+  useInScreenBack(photoMenu, () => setPhotoMenu(false));
 
   const values = form || user || {};
   const fieldsChanged = useMemo(() => {

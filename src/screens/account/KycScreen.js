@@ -23,6 +23,7 @@ import {
   Notice,
 } from '../../components';
 import useApi from '../../hooks/useApi';
+import useInScreenBack from '../../hooks/useInScreenBack';
 import * as api from '../../services/api';
 import { imageUrl } from '../../services/http';
 import { colors, fonts, spacing, type } from '../../theme';
@@ -55,6 +56,8 @@ export default function KycScreen() {
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pendingPickerRef = useRef(null);
+
+  useInScreenBack(pickerOpen, () => setPickerOpen(false));
 
   if (loading && !data) {
     return (
