@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BarChart } from 'react-native-gifted-charts';
 import { fonts } from '../../theme';
 
@@ -14,9 +14,16 @@ const AXIS_DIM = '#5f6678';
 const ZERO_LINE = 'rgba(255,255,255,0.18)';
 const RULE = 'rgba(255,255,255,0.06)';
 
+const Y_AXIS_W = 34;
+const BAR_W = 22;
+const SPACING = 14;
+const INITIAL = 8;
+const END = 12;
+
 /**
  * CashFlowChart – web WeeklyFlow stacked bars:
  * Income + Deposits above zero, Withdrawals & transfers out below.
+ * Horizontal ScrollView when bars exceed the card width.
  *
  * props
  *   weeks: [{ label, income, deposits, out }]
@@ -24,11 +31,10 @@ const RULE = 'rgba(255,255,255,0.06)';
  */
 export default function CashFlowChart({ weeks = [], width, height = 220 }) {
   const n = Math.max(weeks.length, 1);
-  const chartW = Math.max(width - 8, 160);
-  // web columnWidth ~62%
-  const slot = chartW / n;
-  const barWidth = Math.max(10, Math.min(28, Math.round(slot * 0.62)));
-  const spacing = Math.max(6, Math.round(slot - barWidth));
+  const viewportW = Math.max(width - 8, 120);
+  // Fixed bar size so 8 weeks stay readable; scroll if wider than card
+  const contentW = Y_AXIS_W + INITIAL + n * (BAR_W + SPACING) - SPACING + END;
+  const chartW = Math.max(contentW, viewportW);
 
   const stackData = useMemo(
     () =>
@@ -65,45 +71,53 @@ export default function CashFlowChart({ weeks = [], width, height = 220 }) {
 
   const maxIn = Math.max(...weeks.map(w => (Number(w.income) || 0) + (Number(w.deposits) || 0)), 0);
   const maxOut = Math.max(...weeks.map(w => Math.abs(Number(w.out) || 0)), 0);
-  // Integer steps like web Apex — empty data → 0, 1, 2 (no fractional → duplicate 0s)
   const scale = buildYScale(maxIn, maxOut);
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { width: viewportW }]}>
       <View style={styles.legendRow}>
         <LegendDot color={SERIES.income} label="Income" />
         <LegendDot color={SERIES.deposits} label="Deposits" />
         <LegendDot color={SERIES.out} label="Withdrawals & transfers out" />
       </View>
-      <BarChart
-        stackData={stackData}
-        width={chartW}
-        height={height}
-        barWidth={barWidth}
-        spacing={spacing}
-        initialSpacing={Math.round(spacing / 2)}
-        endSpacing={Math.round(spacing / 2)}
-        maxValue={scale.maxValue}
-        stepValue={scale.step}
-        mostNegativeValue={scale.mostNegative}
-        noOfSections={scale.sections}
-        noOfSectionsBelowXAxis={scale.sectionsBelow}
-        yAxisThickness={0}
-        xAxisThickness={1}
-        xAxisColor={ZERO_LINE}
-        rulesColor={RULE}
-        rulesType="dashed"
-        dashWidth={4}
-        dashGap={4}
-        yAxisTextStyle={styles.axisY}
-        xAxisLabelTextStyle={styles.axisX}
-        yAxisLabelWidth={34}
-        formatYLabel={v => formatAxis(Number(v))}
-        disableScroll
-        isAnimated
-        animationDuration={700}
-        autoShiftLabelsForNegativeStacks={false}
-      />
+      <ScrollView
+        horizontal
+        nestedScrollEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator
+        bounces={false}
+        style={{ width: viewportW }}
+        contentContainerStyle={{ width: chartW }}>
+        <BarChart
+          stackData={stackData}
+          width={chartW}
+          height={height}
+          barWidth={BAR_W}
+          spacing={SPACING}
+          initialSpacing={INITIAL}
+          endSpacing={END}
+          maxValue={scale.maxValue}
+          stepValue={scale.step}
+          mostNegativeValue={scale.mostNegative}
+          noOfSections={scale.sections}
+          noOfSectionsBelowXAxis={scale.sectionsBelow}
+          yAxisThickness={0}
+          xAxisThickness={1}
+          xAxisColor={ZERO_LINE}
+          rulesColor={RULE}
+          rulesType="dashed"
+          dashWidth={4}
+          dashGap={4}
+          yAxisTextStyle={styles.axisY}
+          xAxisLabelTextStyle={styles.axisX}
+          yAxisLabelWidth={Y_AXIS_W}
+          formatYLabel={v => formatAxis(Number(v))}
+          disableScroll
+          isAnimated
+          animationDuration={700}
+          autoShiftLabelsForNegativeStacks={false}
+        />
+      </ScrollView>
     </View>
   );
 }
@@ -150,7 +164,7 @@ function formatAxis(v) {
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 2 },
+  wrap: { marginTop: 2, alignSelf: 'center', overflow: 'hidden' },
   legendRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',

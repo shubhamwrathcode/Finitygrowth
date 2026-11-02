@@ -330,7 +330,9 @@ export default function EarningsScreen({ navigation }) {
               <View key={group.key} style={styles.group}>
                 <View style={styles.dayRow}>
                   <Text style={styles.day}>{group.label}</Text>
-                  <Text style={styles.daySum}>+{money(dayTotal)}</Text>
+                  <Text style={styles.daySum}>
+                    +{money(dayTotal)} {currency}
+                  </Text>
                 </View>
                 {group.rows.map((row, i) => {
                   const meta = SOURCES.find(x => x.type === row.type) || source;
@@ -346,7 +348,9 @@ export default function EarningsScreen({ navigation }) {
                         </Text>
                       </View>
                       <View style={styles.histRight}>
-                        <Text style={styles.histAmt}>+{money(row.amount)}</Text>
+                        <Text style={styles.histAmt}>
+                          +{money(row.amount)} {currency}
+                        </Text>
                         <Text style={type.tiny}>
                           {new Date(row.createdAt).toLocaleTimeString(undefined, {
                             hour: '2-digit',

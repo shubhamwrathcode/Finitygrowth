@@ -1,48 +1,100 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { PieChart } from 'react-native-gifted-charts';
-import { colors, fonts } from '../../theme';
+import { fonts } from '../../theme';
+import { money } from '../../utils/format';
+
+/** Same as web ApexChart CHART.series */
+export const DONUT_COLORS = ['#bd8b30', '#8b7cff', '#24a194'];
+
+const INK = '#eef0f5';
+const MUTED = '#8c93a6';
+const SURFACE = '#0f1219';
+const GOLD_TIP = '#bd8b30';
 
 /**
- * DonutChart – share of a total by category (e.g. income by source).
- * Empty (total = 0) → web `.empty-ring` spinner: muted track + gold tip, 6s spin.
+ * DonutChart – web IncomeDonut (ApexCharts donut) look.
+ * Center: total + "Total earned"; tap a slice → value + label + gold tooltip.
  *
  * props
- *   data: [{ value, color, label }]
- *   centerTitle / centerSubtitle: text in the hole (when data present)
- *   emptyMessage: optional copy under the spinner (web chart-empty)
+ *   data: [{ value, color?, label }]
+ *   currency: e.g. "USDT"
+ *   holeColor: inner circle fill
+ *   emptyMessage: copy when total is 0
  */
 export default function DonutChart({
-  data,
-  size = 120,
-  centerTitle,
-  centerSubtitle,
+  data = [],
+  size = 200,
+  currency = 'USDT',
   holeColor,
   emptyMessage,
+  centerLabel = 'Total earned',
 }) {
+  const [focus, setFocus] = useState(-1);
   const total = data.reduce((s, d) => s + (Number(d.value) || 0), 0);
-  const hole = holeColor || colors.bg;
+  const hole = holeColor || SURFACE;
+
+  const slices = useMemo(
+    () =>
+      (data || [])
+        .map((d, i) => ({
+          value: Math.max(0, Number(d.value) || 0),
+          color: d.color || DONUT_COLORS[i % DONUT_COLORS.length],
+          label: d.label || '',
+          index: i,
+        }))
+        .filter(s => s.value > 0),
+    [data],
+  );
 
   if (total <= 0) {
-    return <EmptyRing size={size} message={emptyMessage} />;
+    return <EmptyRing size={Math.min(size, 120)} message={emptyMessage} />;
   }
 
+  const radius = size / 2;
+  // web donut.size: "74%"
+  const innerRadius = radius * 0.74;
+  const active = focus >= 0 ? slices[focus] : null;
+  const centerValue = active ? active.value : total;
+  const centerSub = active ? active.label : centerLabel;
+
   return (
-    <PieChart
-      donut
-      data={data.map(d => ({ value: d.value, color: d.color }))}
-      radius={size / 2}
-      innerRadius={size / 2 - 14}
-      innerCircleColor={hole}
-      strokeWidth={2}
-      strokeColor={hole}
-      centerLabelComponent={() => (
-        <View style={styles.center}>
-          <Text style={styles.title}>{centerTitle}</Text>
-          {centerSubtitle ? <Text style={styles.sub}>{centerSubtitle}</Text> : null}
+    <View style={[styles.wrap, { width: size + 24, minHeight: size + (active ? 36 : 0) }]}>
+      <PieChart
+        donut
+        data={slices.map((s, i) => ({
+          value: s.value,
+          color: s.color,
+          onPress: () => setFocus(prev => (prev === i ? -1 : i)),
+        }))}
+        radius={radius}
+        innerRadius={innerRadius}
+        innerCircleColor={hole}
+        strokeWidth={3}
+        strokeColor={hole}
+        focusOnPress
+        toggleFocusOnPress
+        extraRadius={6}
+        isAnimated
+        animationDuration={700}
+        centerLabelComponent={() => (
+          <Pressable onPress={() => setFocus(-1)} style={styles.center}>
+            <Text style={styles.value}>{money(centerValue)}</Text>
+            <Text style={styles.sub} numberOfLines={2}>
+              {centerSub}
+            </Text>
+          </Pressable>
+        )}
+      />
+
+      {active ? (
+        <View style={styles.tooltip} pointerEvents="none">
+          <Text style={styles.tooltipText}>
+            {active.label}: {money(active.value)} {currency}
+          </Text>
         </View>
-      )}
-    />
+      ) : null}
+    </View>
   );
 }
 
@@ -91,9 +143,45 @@ export function EmptyRing({ size = 120, message, children }) {
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center' },
-  title: { fontFamily: fonts.display, fontSize: 15, color: colors.text },
-  sub: { fontFamily: fonts.regular, fontSize: 9, color: colors.subtle },
+  wrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  center: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    maxWidth: 120,
+  },
+  value: {
+    fontFamily: fonts.bold,
+    fontSize: 24,
+    fontWeight: '700',
+    color: INK,
+    letterSpacing: -0.3,
+  },
+  sub: {
+    marginTop: 2,
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: MUTED,
+    textAlign: 'center',
+  },
+  tooltip: {
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: GOLD_TIP,
+    maxWidth: 260,
+  },
+  tooltipText: {
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    color: '#fff',
+    textAlign: 'center',
+  },
   emptyWrap: { alignItems: 'center', gap: 12, paddingVertical: 18, paddingHorizontal: 12 },
   ring: {
     borderColor: 'rgba(255, 255, 255, 0.05)',
@@ -103,7 +191,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 13,
     lineHeight: 18,
-    color: colors.muted,
+    color: MUTED,
     textAlign: 'center',
     maxWidth: 260,
   },

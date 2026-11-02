@@ -368,7 +368,7 @@ export default function WalletScreen({ navigation }) {
               series={chartSeries}
               range={range}
               width={chartWidth}
-              height={176}
+              height={280}
               onFocus={setChartFocus}
             />
           ) : ledger === null ? (

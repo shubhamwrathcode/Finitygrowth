@@ -42,6 +42,13 @@ function statusTone(status) {
   return 'neutral';
 }
 
+/** active → Active, completed → Completed */
+function statusLabel(status) {
+  return String(status || '')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
 function PurchaseCard({ item, currency }) {
   const total = Number(item.expectedTotal ?? planTotal(item));
   const earned = Number(item.earnedAmount || 0);
@@ -68,10 +75,7 @@ function PurchaseCard({ item, currency }) {
           </Text>
           <Text style={styles.ppCode}>{item.packageCode}</Text>
         </View>
-        <Badge
-          label={String(item.status || '').replaceAll('_', ' ')}
-          tone={statusTone(item.status)}
-        />
+        <Badge label={statusLabel(item.status)} tone={statusTone(item.status)} />
       </View>
 
       <View style={styles.ppMid}>
@@ -274,7 +278,7 @@ export default function MyPackagesScreen({ navigation }) {
             series={series}
             currency={currency}
             width={width - spacing.screen * 2 - 32}
-            height={220}
+            height={280}
           />
         ) : (
           <View style={styles.chartEmpty}>

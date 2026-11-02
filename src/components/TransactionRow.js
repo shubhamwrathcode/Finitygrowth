@@ -2,12 +2,12 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Icon from './Icon';
 import { colors, fonts } from '../theme';
-import { signed } from '../utils/format';
+import { money } from '../utils/format';
 import { shortDate } from '../utils/date';
 
 /**
  * TransactionRow – one wallet ledger entry (see src/data/ledger.js).
- * The icon and colour come from the entry `type`.
+ * Amount matches web: "+1.25 USDT" / "−200.00 USDT" with dynamic currency.
  */
 const look = {
   // Mock / legacy types
@@ -27,9 +27,16 @@ const look = {
   withdrawal_refund: { icon: 'arrowDown', color: colors.success, bg: colors.successSoft },
 };
 
-export default function TransactionRow({ item, last = false }) {
+const CREDIT = '#8ddea8';
+const DEBIT = '#f4a097';
+
+export default function TransactionRow({ item, last = false, currency }) {
   const l = look[item.type] || look.package;
-  const positive = item.amount >= 0;
+  const n = Number(item.amount) || 0;
+  const positive = n >= 0;
+  const unit = currency || item.currency || 'USDT';
+  const amountText = `${positive ? '+' : '−'}${money(Math.abs(n))} ${unit}`;
+
   return (
     <View style={[styles.row, !last && styles.line]}>
       <View style={[styles.icon, { backgroundColor: l.bg }]}>
@@ -40,7 +47,7 @@ export default function TransactionRow({ item, last = false }) {
         <Text style={styles.sub} numberOfLines={1}>{item.subtitle}</Text>
       </View>
       <View style={styles.right}>
-        <Text style={[styles.amount, { color: positive ? colors.success : colors.text }]}>{signed(item.amount)}</Text>
+        <Text style={[styles.amount, { color: positive ? CREDIT : DEBIT }]}>{amountText}</Text>
         <Text style={styles.sub}>{item.status ? item.status : shortDate(item.date)}</Text>
       </View>
     </View>

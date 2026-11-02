@@ -17,13 +17,16 @@ import {
   EmptyRing,
   SimpleBarChart,
   CashFlowChart,
+  RadialBarChart,
+  RADIAL_COLORS,
+  DONUT_COLORS,
 } from '../../components/charts';
 import useApi from '../../hooks/useApi';
 import * as api from '../../services/api';
 import { INCOME_TYPES, toTransactionRow } from '../../services/dashboardData';
 import { ROUTES } from '../../navigation/routes';
 import { colors, fonts, radius, spacing, type } from '../../theme';
-import { money, percent, round2 } from '../../utils/format';
+import { money, round2 } from '../../utils/format';
 
 /**
  * DashboardScreen (Home tab)
@@ -83,10 +86,11 @@ export default function DashboardScreen({ navigation }) {
   const unit = currency || 'USDT';
   const firstName = user.firstName || 'Member';
 
+  // Same labels + CHART.series colors as web IncomeDonut
   const income = [
-    { key: 'roi', label: 'Package earnings', value: incomeBreakdown.roi, color: colors.gold },
-    { key: 'direct', label: 'Direct commission', value: incomeBreakdown.direct, color: colors.goldDeep },
-    { key: 'level', label: 'Level commission', value: incomeBreakdown.level, color: colors.info },
+    { key: 'roi', label: 'Package earnings', value: incomeBreakdown.roi, color: DONUT_COLORS[0] },
+    { key: 'direct', label: 'Direct commission', value: incomeBreakdown.direct, color: DONUT_COLORS[1] },
+    { key: 'level', label: 'Level commission', value: incomeBreakdown.level, color: DONUT_COLORS[2] },
   ];
 
   const filterTypes = TX_FILTERS.find(item => item.key === txFilter)?.types;
@@ -198,44 +202,11 @@ export default function DashboardScreen({ navigation }) {
         />
       </View>
 
-      {/* Wallet balance — mirrors web TradingChart */}
-      <Card style={styles.chartCard} padding={12}>
+      {/* Wallet balance — exact web TradingChart card */}
+      <Card style={styles.chartCard} padding={16}>
         <View style={styles.tvHead}>
           <View style={styles.tvLeft}>
-            <View style={styles.tvTitleRow}>
-              <Text style={styles.dashLabel}>Wallet balance</Text>
-              <View style={styles.seg}>
-                {RANGES.map(key => {
-                  const on = range === key;
-                  const chip = (
-                    <Text style={[styles.rangeText, on && styles.rangeTextOn]}>{key}</Text>
-                  );
-                  return (
-                    <Pressable
-                      key={key}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: on }}
-                      onPress={() => {
-                        setRange(key);
-                        setChartFocus(null);
-                      }}
-                      style={styles.rangePress}>
-                      {on ? (
-                        <LinearGradient
-                          colors={GOLD_GRAD}
-                          start={{ x: 0, y: 0 }}
-                          end={{ x: 1, y: 1 }}
-                          style={[styles.rangeChip, styles.rangeGlow]}>
-                          {chip}
-                        </LinearGradient>
-                      ) : (
-                        <View style={styles.rangeChip}>{chip}</View>
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
+            <Text style={styles.dashLabel}>Wallet balance</Text>
             <View style={styles.tvValueRow}>
               <Text style={styles.chartValue}>
                 {money(shownBalance)} {unit}
@@ -267,6 +238,37 @@ export default function DashboardScreen({ navigation }) {
               </View>
             </View>
           </View>
+          <View style={styles.seg}>
+            {RANGES.map(key => {
+              const on = range === key;
+              const chip = (
+                <Text style={[styles.rangeText, on && styles.rangeTextOn]}>{key}</Text>
+              );
+              return (
+                <Pressable
+                  key={key}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => {
+                    setRange(key);
+                    setChartFocus(null);
+                  }}
+                  style={styles.rangePress}>
+                  {on ? (
+                    <LinearGradient
+                      colors={GOLD_GRAD}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[styles.rangeChip, styles.rangeGlow]}>
+                      {chip}
+                    </LinearGradient>
+                  ) : (
+                    <View style={styles.rangeChip}>{chip}</View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
         <View style={styles.chart}>
           {series.length ? (
@@ -274,7 +276,7 @@ export default function DashboardScreen({ navigation }) {
               series={series}
               range={range}
               width={chartWidth}
-              height={188}
+              height={280}
               onFocus={setChartFocus}
             />
           ) : (
@@ -300,27 +302,32 @@ export default function DashboardScreen({ navigation }) {
         <View style={styles.donutWrap}>
           <DonutChart
             data={income}
-            centerTitle={money(incomeBreakdown.total, 0)}
-            centerSubtitle={unit}
+            size={200}
+            currency={unit}
             holeColor={colors.surface}
             emptyMessage="No earnings posted yet. They appear here once a package or commission pays."
           />
         </View>
         <View style={styles.legendCol}>
-          {income.map(i => (
-            <View key={i.key} style={styles.legendRow}>
-              <View style={[styles.swatch, { backgroundColor: i.color }]} />
-              <Text style={styles.legendLabel} numberOfLines={1}>
-                {i.label}
-              </Text>
-              <Text style={styles.legendValue} numberOfLines={1}>
-                {money(i.value)} {unit}
-              </Text>
-              <Text style={styles.legendPct} numberOfLines={1}>
-                {percent(incomeBreakdown.total ? i.value / incomeBreakdown.total : 0, 0)}
-              </Text>
-            </View>
-          ))}
+          {income.map(i => {
+            const share = incomeBreakdown.total
+              ? Math.round((i.value / incomeBreakdown.total) * 100)
+              : 0;
+            return (
+              <View key={i.key} style={styles.legendRow}>
+                <View style={[styles.swatch, { backgroundColor: i.color }]} />
+                <Text style={styles.legendLabel} numberOfLines={1}>
+                  {i.label}
+                </Text>
+                <Text style={styles.legendValue} numberOfLines={1}>
+                  {money(i.value)} {unit}
+                </Text>
+                <Text style={styles.legendPct} numberOfLines={1}>
+                  {share}%
+                </Text>
+              </View>
+            );
+          })}
         </View>
       </Card>
 
@@ -349,31 +356,49 @@ export default function DashboardScreen({ navigation }) {
             </Pressable>
           </EmptyRing>
         ) : (
-          data.activePackages.slice(0, 3).map(p => (
-            <Pressable
-              key={p.id}
-              style={styles.pkg}
-              onPress={() => navigation.navigate(ROUTES.MY_PACKAGES)}>
-              <View style={styles.pkgHead}>
-                <Text style={styles.pkgName}>
-                  {p.planName}
-                  {p.amount ? ` · ${money(p.amount, 0)} ${unit}` : ''}
+          <>
+            {/* Web PackageProgress: ApexCharts radialBar + legend + posted/scheduled */}
+            <RadialBarChart
+              size={210}
+              items={data.activePackages.slice(0, 3).map(p => ({
+                percent: Math.round((p.daysElapsed / Math.max(1, p.durationDays)) * 100),
+              }))}
+            />
+            <View style={styles.pkgLegend}>
+              {data.activePackages.slice(0, 3).map((p, index) => (
+                <Pressable
+                  key={p.id}
+                  style={styles.pkgLegendRow}
+                  onPress={() => navigation.navigate(ROUTES.MY_PACKAGES)}>
+                  <View
+                    style={[
+                      styles.pkgSwatch,
+                      { backgroundColor: RADIAL_COLORS[index % RADIAL_COLORS.length] },
+                    ]}
+                  />
+                  <Text style={styles.pkgLegendName} numberOfLines={1}>
+                    {p.planName}
+                  </Text>
+                  <Text style={styles.pkgLegendDays}>
+                    {p.daysElapsed}/{p.durationDays}d
+                  </Text>
+                  <Text style={styles.pkgLegendDaily}>
+                    {money(p.dailyAmount)} {unit}/day
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            {Number(data.summary?.packageExpected || 0) > 0 ? (
+              <View style={styles.pkgFooter}>
+                <Text style={styles.pkgFooterLabel}>
+                  Posted {money(data.summary?.packageEarned || 0)} {unit}
                 </Text>
-                <Text style={styles.pkgDaily}>+{money(p.dailyAmount)}/day</Text>
-              </View>
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${p.progress * 100}%` }]} />
-              </View>
-              <View style={styles.pkgHead}>
-                <Text style={type.tiny}>
-                  Day {p.daysElapsed} of {p.durationDays}
-                </Text>
-                <Text style={type.tiny}>
-                  {money(p.earned)} / {money(p.totalPayout)} {unit}
+                <Text style={styles.pkgFooterLabel}>
+                  Scheduled total {money(data.summary?.packageExpected || 0)} {unit}
                 </Text>
               </View>
-            </Pressable>
-          ))
+            ) : null}
+          </>
         )}
       </Card>
 
@@ -455,7 +480,12 @@ export default function DashboardScreen({ navigation }) {
         </View>
         {recentRows.length ? (
           recentRows.map((t, i) => (
-            <TransactionRow key={t.id || `${t.type}-${i}`} item={t} last={i === recentRows.length - 1} />
+            <TransactionRow
+              key={t.id || `${t.type}-${i}`}
+              item={t}
+              currency={unit}
+              last={i === recentRows.length - 1}
+            />
           ))
         ) : (
           <EmptyState icon="wallet" title="No transactions in this view yet" />
@@ -706,15 +736,13 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   tvHead: {
-    marginBottom: 2,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 4,
   },
   tvLeft: { flex: 1, minWidth: 0 },
-  tvTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
   dashLabel: {
     fontFamily: fonts.semibold,
     fontSize: 11,
@@ -724,20 +752,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 4,
+    gap: 10,
+    marginTop: 6,
+    marginBottom: 4,
   },
   tvMeta: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-    columnGap: 10,
+    gap: 6,
+    columnGap: 14,
   },
   tvMetaDate: {
     fontFamily: fonts.regular,
-    fontSize: 11,
+    fontSize: 12,
     color: colors.subtle,
   },
   cardHead: {
@@ -790,24 +818,24 @@ const styles = StyleSheet.create({
   rangeTextOn: { color: colors.goldInk },
   chartValue: {
     fontFamily: fonts.display,
-    fontSize: 18,
+    fontSize: 22,
     color: colors.text,
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
   },
   changeChip: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: radius.pill,
   },
-  changeText: { fontFamily: fonts.semibold, fontSize: 10 },
-  legendKey: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  keyLine: { width: 12, height: 2, borderRadius: 1, backgroundColor: colors.gold },
-  keyBar: { width: 7, height: 8, borderRadius: 2, backgroundColor: INCOME_PURPLE },
-  keyLabel: { fontFamily: fonts.regular, fontSize: 10, color: colors.muted },
-  chart: { marginTop: 6 },
+  changeText: { fontFamily: fonts.bold, fontSize: 11 },
+  legendKey: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  keyLine: { width: 14, height: 0, borderTopWidth: 2, borderTopColor: colors.gold },
+  keyBar: { width: 8, height: 10, borderRadius: 2, backgroundColor: INCOME_PURPLE },
+  keyLabel: { fontFamily: fonts.regular, fontSize: 12, color: colors.muted },
+  chart: { marginTop: 12 },
 
-  donutWrap: { alignItems: 'center', marginTop: 4, marginBottom: 8 },
-  legendCol: { gap: 4 },
+  donutWrap: { alignItems: 'center', marginTop: 4, marginBottom: 4 },
+  legendCol: { gap: 4, marginTop: 4 },
   legendRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -820,38 +848,69 @@ const styles = StyleSheet.create({
   legendLabel: {
     flex: 1,
     fontFamily: fonts.regular,
-    fontSize: 12,
-    color: colors.textSoft,
+    fontSize: 13,
+    color: colors.muted,
     minWidth: 0,
   },
   legendValue: {
     fontFamily: fonts.semibold,
-    fontSize: 12,
+    fontSize: 13,
     color: colors.text,
     fontVariant: ['tabular-nums'],
     textAlign: 'right',
   },
   legendPct: {
-    minWidth: 36,
+    minWidth: 42,
     fontFamily: fonts.regular,
-    fontSize: 11,
+    fontSize: 12,
     color: colors.subtle,
     fontVariant: ['tabular-nums'],
     textAlign: 'right',
   },
 
-  pkg: { marginBottom: 10, gap: 10, paddingTop: 4 },
-  pkgHead: { flexDirection: 'row', justifyContent: 'space-between' },
-  pkgName: {
+  pkgLegend: { marginTop: 8, gap: 2 },
+  pkgLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+  },
+  pkgSwatch: { width: 10, height: 10, borderRadius: 3 },
+  pkgLegendName: {
+    flex: 1,
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    color: colors.textSoft,
+    minWidth: 0,
+  },
+  pkgLegendDays: {
     fontFamily: fonts.semibold,
     fontSize: 13,
     color: colors.text,
-    flex: 1,
-    paddingRight: 8,
+    fontVariant: ['tabular-nums'],
   },
-  pkgDaily: { fontFamily: fonts.semibold, fontSize: 12, color: colors.gold },
-  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.line },
-  progressFill: { height: 6, borderRadius: 3, backgroundColor: colors.gold },
+  pkgLegendDaily: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.subtle,
+    fontVariant: ['tabular-nums'],
+  },
+  pkgFooter: {
+    marginTop: 10,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  pkgFooterLabel: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    color: colors.muted,
+  },
   pkgBuyBtn: { marginTop: 4, borderRadius: 999, overflow: 'hidden' },
   pkgBuyGrad: {
     paddingHorizontal: 22,
