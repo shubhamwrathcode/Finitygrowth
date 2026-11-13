@@ -3,9 +3,9 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Screen,
   Header,
-  Button,
-  AuthField,
-  AuthSelect,
+  // Button,
+  // AuthField,
+  // AuthSelect,
   Loading,
   ErrorView,
   EmptyState,
@@ -15,11 +15,12 @@ import useApi from '../../hooks/useApi';
 import * as api from '../../services/api';
 import { colors, fonts, type } from '../../theme';
 
-const NETWORKS = [
-  { label: 'TRC20', value: 'TRC20' },
-  { label: 'ERC20', value: 'ERC20' },
-  { label: 'BEP20', value: 'BEP20' },
-];
+// Save address form — temporarily off.
+// const NETWORKS = [
+//   { label: 'TRC20', value: 'TRC20' },
+//   { label: 'ERC20', value: 'ERC20' },
+//   { label: 'BEP20', value: 'BEP20' },
+// ];
 
 /**
  * AddressesScreen – same as web Wallet.jsx Addresses.
@@ -27,40 +28,40 @@ const NETWORKS = [
  */
 export default function AddressesScreen() {
   const query = useApi(api.getDestinations);
-  const [form, setForm] = useState({ label: '', network: 'TRC20', address: '' });
-  const [errors, setErrors] = useState({});
+  // const [form, setForm] = useState({ label: '', network: 'TRC20', address: '' });
+  // const [errors, setErrors] = useState({});
   const [message, setMessage] = useState('');
-  const [busy, setBusy] = useState(false);
+  // const [busy, setBusy] = useState(false);
 
   const rows = query.data || [];
-  const ok = message === 'Address saved.';
+  // const ok = message === 'Address saved.';
 
-  const setField = (key, value) => {
-    setForm(prev => ({ ...prev, [key]: value }));
-    if (errors[key]) setErrors(prev => ({ ...prev, [key]: undefined }));
-  };
+  // const setField = (key, value) => {
+  //   setForm(prev => ({ ...prev, [key]: value }));
+  //   if (errors[key]) setErrors(prev => ({ ...prev, [key]: undefined }));
+  // };
 
-  const submit = async () => {
-    if (busy || rows.length >= 10) return;
-    setMessage('');
-    setErrors({});
-    setBusy(true);
-    try {
-      await api.createDestination({
-        label: form.label.trim(),
-        network: form.network,
-        address: form.address.trim(),
-      });
-      setForm({ label: '', network: 'TRC20', address: '' });
-      setMessage('Address saved.');
-      query.refresh();
-    } catch (error) {
-      setMessage(error.message || 'Request failed');
-      setErrors(error.errors || {});
-    } finally {
-      setBusy(false);
-    }
-  };
+  // const submit = async () => {
+  //   if (busy || rows.length >= 10) return;
+  //   setMessage('');
+  //   setErrors({});
+  //   setBusy(true);
+  //   try {
+  //     await api.createDestination({
+  //       label: form.label.trim(),
+  //       network: form.network,
+  //       address: form.address.trim(),
+  //     });
+  //     setForm({ label: '', network: 'TRC20', address: '' });
+  //     setMessage('Address saved.');
+  //     query.refresh();
+  //   } catch (error) {
+  //     setMessage(error.message || 'Request failed');
+  //     setErrors(error.errors || {});
+  //   } finally {
+  //     setBusy(false);
+  //   }
+  // };
 
   const remove = id => {
     Alert.alert('Delete address?', 'This saved address will be removed.', [
@@ -92,25 +93,26 @@ export default function AddressesScreen() {
 
   return (
     <Screen
-      keyboard
       onRefresh={query.refresh}
       refreshing={query.loading}
-      footer={
-        <View style={styles.footer}>
-          <Button
-            title="Save address"
-            loading={busy}
-            disabled={busy || rows.length >= 10 || !form.label.trim() || !form.address.trim()}
-            onPress={submit}
-          />
-        </View>
-      }>
+      // footer={
+      //   <View style={styles.footer}>
+      //     <Button
+      //       title="Save address"
+      //       loading={busy}
+      //       disabled={busy || rows.length >= 10 || !form.label.trim() || !form.address.trim()}
+      //       onPress={submit}
+      //     />
+      //   </View>
+      // }
+      >
       <Header title="Saved addresses" />
       <Text style={type.body}>
         Save up to 10 payout addresses. Withdrawals on this app only accept BEP20.
       </Text>
       <Text style={[type.tiny, styles.count]}>{rows.length} of 10 saved.</Text>
 
+      {/* Save address form — temporarily off.
       <View style={styles.form}>
         {message ? (
           <View style={[styles.alert, ok ? styles.alertOk : styles.alertBad]}>
@@ -148,6 +150,13 @@ export default function AddressesScreen() {
           spellCheck={false}
         />
       </View>
+      */}
+
+      {message ? (
+        <View style={[styles.alert, styles.alertBad]}>
+          <Text style={[styles.alertText, styles.badText]}>{message}</Text>
+        </View>
+      ) : null}
 
       <Text style={[type.h2, styles.listTitle]}>Your addresses</Text>
       {query.loading && !query.data ? (

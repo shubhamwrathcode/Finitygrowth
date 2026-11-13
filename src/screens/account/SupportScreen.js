@@ -6,6 +6,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Modal,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -127,7 +128,12 @@ export default function SupportScreen() {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [keyboardH, setKeyboardH] = useState(0);
+  const [liftKeyboard, setLiftKeyboard] = useState(false);
   const threadRef = useRef(null);
+  const replyRef = useRef(null);
+  const replyFocusedAt = useRef(0);
+  const replyRestoring = useRef(false);
+  const replyRetries = useRef(0);
 
   const leaveThread = () => {
     setSelected('');
@@ -166,6 +172,42 @@ export default function SupportScreen() {
       hideSub.remove();
     };
   }, [creating]);
+
+  // Android resizes the window as the keyboard opens, which blurs the reply
+  // field and closes the keyboard. Hold the window still, then lift the
+  // composer by the keyboard height. iOS lifts the same way, without
+  // KeyboardAvoidingView (its layout animation was dismissing the keyboard).
+  useEffect(() => {
+    if (!selected) {
+      setLiftKeyboard(false);
+      return undefined;
+    }
+    const mod = Platform.OS === 'android' ? NativeModules.SoftInputMode : null;
+    if (Platform.OS === 'android' && !mod?.setMode) return undefined;
+    if (mod?.setMode) mod.setMode('nothing');
+    setLiftKeyboard(true);
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    let hideTimer;
+    const showSub = Keyboard.addListener(showEvt, e => {
+      if (hideTimer) clearTimeout(hideTimer);
+      setKeyboardH(e?.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => {
+        if (!replyRestoring.current) setKeyboardH(0);
+      }, 500);
+    });
+    return () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      showSub.remove();
+      hideSub.remove();
+      setLiftKeyboard(false);
+      setKeyboardH(0);
+      mod?.setMode?.('resize');
+    };
+  }, [selected]);
 
   const tickets = list.data?.data || [];
   const current =
@@ -244,112 +286,144 @@ export default function SupportScreen() {
   const limit = list.data?.limit || 10;
   const pageCount = Math.max(1, Math.ceil(total / limit));
 
+  const composer =
+    current && String(current.status).toLowerCase() !== 'closed' ? (
+      <View style={styles.composer}>
+        {replyFile ? (
+          <View style={styles.fileChip}>
+            <Image source={{ uri: replyFile.uri }} style={styles.fileThumb} />
+            <Text style={styles.fileName} numberOfLines={1}>
+              {replyFile.name}
+            </Text>
+            <Pressable onPress={() => setReplyFile(null)} hitSlop={8} accessibilityLabel="Remove image">
+              <Icon name="close" size={16} color={colors.muted} />
+            </Pressable>
+          </View>
+        ) : null}
+        {notice ? <Text style={styles.errorText}>{notice}</Text> : null}
+        <View style={styles.composerRow}>
+          <Pressable
+            onPress={attachReply}
+            style={styles.iconBtn}
+            accessibilityLabel="Attach image"
+            disabled={busy}>
+            <Icon name="image" size={20} color={colors.gold} />
+          </Pressable>
+          <View style={styles.replyWrap} collapsable={false}>
+            <TextInput
+              ref={replyRef}
+              value={reply}
+              onChangeText={setReply}
+              placeholder="Write a reply…"
+              placeholderTextColor={colors.placeholder}
+              style={styles.replyInput}
+              multiline
+              blurOnSubmit={false}
+              showSoftInputOnFocus
+              textAlignVertical="center"
+              onFocus={() => {
+                replyFocusedAt.current = Date.now();
+              }}
+              onBlur={() => {
+                if (Platform.OS !== 'android') return;
+                if (Date.now() - replyFocusedAt.current > 800) {
+                  replyRetries.current = 0;
+                  return;
+                }
+                if (replyRetries.current >= 2) return;
+                replyRetries.current += 1;
+                replyRestoring.current = true;
+                const attempt = replyRetries.current;
+                setTimeout(() => {
+                  replyRef.current?.focus();
+                  setTimeout(() => {
+                    if (attempt === replyRetries.current) replyRestoring.current = false;
+                  }, 900);
+                }, 150 * attempt);
+              }}
+            />
+          </View>
+          <Pressable
+            onPress={send}
+            style={[styles.sendBtn, (busy || (!reply.trim() && !replyFile)) && styles.sendDisabled]}
+            disabled={busy || (!reply.trim() && !replyFile)}
+            accessibilityLabel="Send reply">
+            <Icon name="send" size={18} color={colors.goldInk} />
+          </Pressable>
+        </View>
+      </View>
+    ) : current && String(current.status).toLowerCase() === 'closed' ? (
+      <View style={styles.closedBar}>
+        <Icon name="lock" size={16} color={colors.muted} />
+        <Text style={styles.closedText}>This ticket is closed. Open a new ticket if you need more help.</Text>
+      </View>
+    ) : null;
+
+  const threadColumn = (
+    <View
+      style={[
+        styles.threadColumn,
+        liftKeyboard &&
+          keyboardH > 0 && {
+            paddingBottom:
+              Platform.OS === 'ios' ? Math.max(0, keyboardH - insets.bottom) : keyboardH + 12,
+          },
+      ]}>
+      <Header
+        title={current?.subject || 'Ticket'}
+        onBack={leaveThread}
+        right={current ? <Badge label={statusLabel(current.status)} tone={statusTone(current.status)} /> : null}
+      />
+      {current ? <Text style={[type.tiny, styles.opened]}>Opened {when(current.createdAt)}</Text> : null}
+
+      {ticket.loading && !current ? (
+        <Loading />
+      ) : ticket.error && !current ? (
+        <ErrorView message={ticket.error} onRetry={ticket.refresh} />
+      ) : current ? (
+        <ScrollView
+          ref={threadRef}
+          style={styles.thread}
+          contentContainerStyle={styles.threadContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="none">
+          {(current.messages || []).map((item, index) => {
+            const mine = item.senderType === 'user';
+            const attach = item.attachment ? imageUrl(item.attachment) : '';
+            return (
+              <View
+                key={`${item.createdAt}-${index}`}
+                style={[styles.msgRow, mine ? styles.msgMine : styles.msgThem]}>
+                {!mine ? (
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>S</Text>
+                  </View>
+                ) : null}
+                <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleThem]}>
+                  {!mine ? <Text style={styles.from}>Support team</Text> : null}
+                  {item.message ? <Text style={styles.msgText}>{item.message}</Text> : null}
+                  {attach ? (
+                    <Pressable onPress={() => Linking.openURL(attach)}>
+                      <Image source={{ uri: attach }} style={styles.attachImg} />
+                    </Pressable>
+                  ) : null}
+                  <Text style={styles.msgTime}>{when(item.createdAt)}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
+      ) : null}
+      {composer}
+    </View>
+  );
+
   // ---- Thread view ----
   if (selected) {
     return (
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
-        <Screen
-          scroll={false}
-          keyboard
-          footer={
-            current && String(current.status).toLowerCase() !== 'closed' ? (
-              <View style={styles.composer}>
-                {replyFile ? (
-                  <View style={styles.fileChip}>
-                    <Image source={{ uri: replyFile.uri }} style={styles.fileThumb} />
-                    <Text style={styles.fileName} numberOfLines={1}>
-                      {replyFile.name}
-                    </Text>
-                    <Pressable onPress={() => setReplyFile(null)} hitSlop={8} accessibilityLabel="Remove image">
-                      <Icon name="close" size={16} color={colors.muted} />
-                    </Pressable>
-                  </View>
-                ) : null}
-                {notice ? <Text style={styles.errorText}>{notice}</Text> : null}
-                <View style={styles.composerRow}>
-                  <Pressable
-                    onPress={attachReply}
-                    style={styles.iconBtn}
-                    accessibilityLabel="Attach image"
-                    disabled={busy}>
-                    <Icon name="image" size={20} color={colors.gold} />
-                  </Pressable>
-                  <TextInput
-                    value={reply}
-                    onChangeText={setReply}
-                    placeholder="Write a reply…"
-                    placeholderTextColor={colors.placeholder}
-                    style={styles.replyInput}
-                    multiline
-                  />
-                  <Pressable
-                    onPress={send}
-                    style={[styles.sendBtn, (busy || (!reply.trim() && !replyFile)) && styles.sendDisabled]}
-                    disabled={busy || (!reply.trim() && !replyFile)}
-                    accessibilityLabel="Send reply">
-                    <Icon name="send" size={18} color={colors.goldInk} />
-                  </Pressable>
-                </View>
-              </View>
-            ) : current && String(current.status).toLowerCase() === 'closed' ? (
-              <View style={styles.closedBar}>
-                <Icon name="lock" size={16} color={colors.muted} />
-                <Text style={styles.closedText}>This ticket is closed. Open a new ticket if you need more help.</Text>
-              </View>
-            ) : null
-          }>
-          <Header
-            title={current?.subject || 'Ticket'}
-            onBack={leaveThread}
-            right={current ? <Badge label={statusLabel(current.status)} tone={statusTone(current.status)} /> : null}
-          />
-          {current ? (
-            <Text style={[type.tiny, styles.opened]}>Opened {when(current.createdAt)}</Text>
-          ) : null}
-
-          {ticket.loading && !current ? (
-            <Loading />
-          ) : ticket.error && !current ? (
-            <ErrorView message={ticket.error} onRetry={ticket.refresh} />
-          ) : current ? (
-            <ScrollView
-              ref={threadRef}
-              style={styles.thread}
-              contentContainerStyle={styles.threadContent}
-              keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => threadRef.current?.scrollToEnd?.({ animated: false })}>
-              {(current.messages || []).map((item, index) => {
-                const mine = item.senderType === 'user';
-                const attach = item.attachment ? imageUrl(item.attachment) : '';
-                return (
-                  <View
-                    key={`${item.createdAt}-${index}`}
-                    style={[styles.msgRow, mine ? styles.msgMine : styles.msgThem]}>
-                    {!mine ? (
-                      <View style={styles.avatar}>
-                        <Text style={styles.avatarText}>S</Text>
-                      </View>
-                    ) : null}
-                    <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleThem]}>
-                      {!mine ? <Text style={styles.from}>Support team</Text> : null}
-                      {item.message ? <Text style={styles.msgText}>{item.message}</Text> : null}
-                      {attach ? (
-                        <Pressable onPress={() => Linking.openURL(attach)}>
-                          <Image source={{ uri: attach }} style={styles.attachImg} />
-                        </Pressable>
-                      ) : null}
-                      <Text style={styles.msgTime}>{when(item.createdAt)}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-          ) : null}
-        </Screen>
-      </KeyboardAvoidingView>
+      <Screen scroll={false} contentStyle={styles.threadScreen}>
+        {threadColumn}
+      </Screen>
     );
   }
 
@@ -358,7 +432,6 @@ export default function SupportScreen() {
     <Screen
       onRefresh={list.refresh}
       refreshing={list.loading}
-      keyboard
       footer={
         <Button title="New ticket" icon="plus" onPress={() => setCreating(true)} />
       }>
@@ -448,6 +521,7 @@ export default function SupportScreen() {
         <KeyboardAvoidingView
           style={styles.modalBackdrop}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          enabled={Platform.OS === 'ios'}
           keyboardVerticalOffset={0}>
           <Pressable
             style={styles.modalDismiss}
@@ -580,6 +654,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
 
+  threadScreen: { paddingBottom: spacing.md, flex: 1 },
+  threadColumn: { flex: 1 },
   thread: { flex: 1 },
   threadContent: { paddingVertical: 8, gap: 12, paddingBottom: 20 },
   msgRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8, maxWidth: '92%' },
@@ -612,8 +688,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  replyWrap: { flex: 1 },
   replyInput: {
-    flex: 1,
     minHeight: 44,
     maxHeight: 120,
     borderRadius: 14,

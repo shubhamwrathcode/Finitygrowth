@@ -18,6 +18,7 @@ import { colors, spacing } from '../theme';
  *  - dark background + safe-area padding (notch / home indicator)
  *  - scrolls by default; pass scroll={false} for fixed layouts
  *  - keyboard → fields scroll above the keyboard; footer stays under it
+ *  - keepFooter → footer stays mounted and rises with the keyboard (chat composer)
  *  - onRefresh → enables pull-to-refresh
  *  - withTabBar → extra bottom space so content is not hidden by the floating tab bar
  *  - footer → content pinned to the bottom (e.g. a primary button)
@@ -32,6 +33,7 @@ export default function Screen({
   padded = true,
   contentStyle,
   keyboard = false,
+  keepFooter = false,
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
@@ -93,7 +95,7 @@ export default function Screen({
     : ['top', 'left', 'right', footer || !withTabBar ? 'bottom' : null].filter(Boolean);
 
   const bottomPad =
-    keyboard && keyboardOpen
+    keyboard && keyboardOpen && !keepFooter
       ? Math.max(keyboardHeight * (Platform.OS === 'ios' ? 0.15 : 0.35), spacing.xxl)
       : 0;
 
@@ -134,8 +136,24 @@ export default function Screen({
     <View style={[styles.flex, ...inner]}>{children}</View>
   );
 
-  // Footer stays under the keyboard — only the scroll area avoids it.
-  const showFooter = Boolean(footer) && !(keyboard && keyboardOpen);
+  // Default: footer stays under the keyboard and unmounts so fields can use the space.
+  // keepFooter: the footer itself is the field (chat composer), so it must stay mounted
+  // or the keyboard closes as soon as it opens.
+  const showFooter = Boolean(footer) && !(keyboard && keyboardOpen && !keepFooter);
+  const footerInside = Boolean(keyboard && keepFooter);
+
+  const footerNode = showFooter ? (
+    <View
+      style={[
+        styles.footer,
+        keyboard && {
+          paddingBottom:
+            keyboardOpen && keepFooter ? spacing.md : Math.max(insets.bottom, spacing.md),
+        },
+      ]}>
+      {footer}
+    </View>
+  ) : null;
 
   const main = keyboard ? (
     <KeyboardAvoidingView
@@ -143,6 +161,7 @@ export default function Screen({
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
       {body}
+      {footerInside ? footerNode : null}
     </KeyboardAvoidingView>
   ) : (
     body
@@ -153,15 +172,7 @@ export default function Screen({
       <SafeAreaView style={styles.safe} edges={edges}>
         <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
         {main}
-        {showFooter ? (
-          <View
-            style={[
-              styles.footer,
-              keyboard && { paddingBottom: Math.max(insets.bottom, spacing.md) },
-            ]}>
-            {footer}
-          </View>
-        ) : null}
+        {footerInside ? null : footerNode}
       </SafeAreaView>
     </KeyboardScrollContext.Provider>
   );
